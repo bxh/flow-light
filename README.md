@@ -4,7 +4,7 @@ A long article rendered on canvas where the cursor acts as a black hole. Text re
 
 Built with [@chenglou/pretext](https://github.com/chenglou/pretext) for pure-JS text measurement and line-by-line layout — no DOM reflow involved.
 
-Deployed at: [flowlight-phdlpht6e-hubangxin-gmailcoms-projects.vercel.app](https://flowlight-phdlpht6e-hubangxin-gmailcoms-projects.vercel.app/)
+Deployed at: [flowlight.vercel.app](https://flowlight.vercel.app/)
 
 ## How it works
 
