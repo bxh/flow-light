@@ -103,15 +103,21 @@ function playScrollTickNow(deltaY: number) {
   osc.stop(time + 0.085)
 }
 
-/** Safe to call from wheel/touch: resumes audio if needed, then plays (otherwise inaudible until gesture). */
+/** Safe to call from wheel/touch: resumes audio synchronously inside the gesture, then plays. */
 export function playScrollTick(deltaY: number) {
-  void ensureAudioRunning()
-    .then(() => playScrollTickNow(deltaY))
-    .catch(() => {})
+  const rig = ensureAudioRig()
+  // resume() must be called synchronously inside the user gesture callback
+  if (rig.ctx.state === 'suspended') rig.ctx.resume().catch(() => {})
+  playScrollTickNow(deltaY)
 }
 
 export function initAudioGestureUnlock() {
-  const tryResume = () => void ensureAudioRunning().catch(() => {})
+  const tryResume = () => {
+    const rig = ensureAudioRig()
+    if (rig.ctx.state === 'suspended') rig.ctx.resume().catch(() => {})
+  }
   window.addEventListener('pointerdown', tryResume)
   window.addEventListener('keydown', tryResume)
+  window.addEventListener('click', tryResume)
+  window.addEventListener('touchstart', tryResume)
 }
