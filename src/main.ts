@@ -48,6 +48,102 @@ const WARP_RADIUS = 140 // how far gravitational lensing reaches
 const WARP_STRENGTH = 6000 // lensing intensity (higher = more pull)
 const TILE = 10 // tile size for displacement sampling
 
+/** Web Audio — drone + scroll tick; unlocks on first pointer/key (browser policy). */
+const AUDIO_MASTER = 0.13
+const SCROLL_SOUND_MIN_MS = 42
+
+type AudioRig = {
+  ctx: AudioContext
+  master: GainNode
+  humGain: GainNode
+  humFilter: BiquadFilterNode
+}
+
+let audioRig: AudioRig | null = null
+let lastScrollSoundMs = 0
+let audioPrevX = 0
+let audioPrevY = 0
+let audioPrevValid = false
+
+function ensureAudioRig(): AudioRig {
+  if (audioRig) return audioRig
+  const ctx = new AudioContext()
+  const master = ctx.createGain()
+  master.gain.value = AUDIO_MASTER
+  master.connect(ctx.destination)
+
+  const humFilter = ctx.createBiquadFilter()
+  humFilter.type = 'lowpass'
+  humFilter.frequency.value = 115
+  humFilter.Q.value = 0.85
+
+  const humGain = ctx.createGain()
+  humGain.gain.value = 0
+  humFilter.connect(humGain)
+  humGain.connect(master)
+
+  const low = ctx.createOscillator()
+  low.type = 'sawtooth'
+  low.frequency.value = 36
+  low.connect(humFilter)
+  const harmonic = ctx.createOscillator()
+  harmonic.type = 'sine'
+  harmonic.frequency.value = 72
+  harmonic.connect(humFilter)
+  low.start()
+  harmonic.start()
+
+  audioRig = { ctx, master, humGain, humFilter }
+  return audioRig
+}
+
+function unlockAudio() {
+  const rig = ensureAudioRig()
+  void rig.ctx.resume()
+}
+
+function updateDroneFromMotion(speed: number) {
+  if (!audioRig || audioRig.ctx.state !== 'running') return
+  const { ctx, humGain, humFilter } = audioRig
+  const t = ctx.currentTime
+  const v = Math.min(1, speed * 0.12)
+  const targetGain = 0.006 + v * 0.095
+  humGain.gain.cancelScheduledValues(t)
+  humGain.gain.setValueAtTime(Math.max(0, humGain.gain.value), t)
+  humGain.gain.linearRampToValueAtTime(targetGain, t + 0.055)
+
+  const targetFreq = 105 + v * 95
+  humFilter.frequency.cancelScheduledValues(t)
+  humFilter.frequency.setValueAtTime(Math.max(20, humFilter.frequency.value), t)
+  humFilter.frequency.linearRampToValueAtTime(targetFreq, t + 0.07)
+}
+
+function playScrollTick(deltaY: number) {
+  if (!audioRig || audioRig.ctx.state !== 'running') return
+  const now = performance.now()
+  if (now - lastScrollSoundMs < SCROLL_SOUND_MIN_MS) return
+  const mag = Math.min(1, Math.abs(deltaY) / 100)
+  if (mag < 0.03) return
+  lastScrollSoundMs = now
+
+  const { ctx, master } = audioRig
+  const time = ctx.currentTime
+  const osc = ctx.createOscillator()
+  osc.type = 'triangle'
+  osc.frequency.value = 280 + mag * 220
+  const g = ctx.createGain()
+  g.gain.setValueAtTime(0.0001, time)
+  g.gain.linearRampToValueAtTime(0.032 * mag, time + 0.01)
+  g.gain.exponentialRampToValueAtTime(0.0008, time + 0.072)
+  osc.connect(g)
+  g.connect(master)
+  osc.start(time)
+  osc.stop(time + 0.085)
+}
+
+window.addEventListener('pointerdown', unlockAudio)
+window.addEventListener('keydown', unlockAudio)
+
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
 
@@ -116,6 +212,14 @@ function draw() {
 
   // Smooth scroll
   scrollY += (targetScrollY - scrollY) * 0.15
+
+  let motionSpeed = 0
+  if (audioPrevValid)
+    motionSpeed = Math.hypot(smoothMouseX - audioPrevX, smoothMouseY - audioPrevY)
+  audioPrevX = smoothMouseX
+  audioPrevY = smoothMouseY
+  audioPrevValid = true
+  updateDroneFromMotion(motionSpeed)
 
   const contentWidth = Math.min(720, W - PADDING * 2)
   const contentLeft = (W - contentWidth) / 2
@@ -300,6 +404,7 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('wheel', (e) => {
   e.preventDefault()
   targetScrollY += e.deltaY
+  playScrollTick(e.deltaY)
 }, { passive: false })
 
 // Touch support
@@ -313,9 +418,11 @@ window.addEventListener('touchstart', (e) => {
 window.addEventListener('touchmove', (e) => {
   e.preventDefault()
   const touch = e.touches[0]
+  const dy = touch.clientY - lastTouchY
   mouseX = touch.clientX
   mouseY = touch.clientY
-  targetScrollY -= (touch.clientY - lastTouchY)
+  targetScrollY -= dy
+  playScrollTick(-dy * 2.5)
   lastTouchY = touch.clientY
 }, { passive: false })
 
