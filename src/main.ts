@@ -1,11 +1,13 @@
 import { prepareWithSegments, type PreparedTextWithSegments } from '@chenglou/pretext'
 import { FONT, PADDING } from './config'
 import { ARTICLE } from './article'
-import { initAudioGestureUnlock, playScrollTick, tickMotionAudio } from './audio'
+import { ensureAudioRunning, initAudioGestureUnlock, playScrollTick, tickMotionAudio } from './audio'
 import { drawArticleToTextCanvas } from './text-layout'
 import { drawBlackHoleAndWarpedText } from './warp-composite'
 
 initAudioGestureUnlock()
+
+const resumeAudioIfPossible = () => void ensureAudioRunning().catch(() => {})
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
@@ -86,6 +88,7 @@ function draw() {
 window.addEventListener('resize', resize)
 
 window.addEventListener('mousemove', (e) => {
+  resumeAudioIfPossible()
   mouseX = e.clientX
   mouseY = e.clientY
 })
@@ -98,6 +101,7 @@ window.addEventListener('wheel', (e) => {
 
 let lastTouchY = 0
 window.addEventListener('touchstart', (e) => {
+  resumeAudioIfPossible()
   lastTouchY = e.touches[0].clientY
   mouseX = e.touches[0].clientX
   mouseY = e.touches[0].clientY

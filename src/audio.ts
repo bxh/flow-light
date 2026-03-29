@@ -1,5 +1,5 @@
-/** Web Audio — drone + scroll tick; unlocks on first pointer/key (browser policy). */
-const AUDIO_MASTER = 0.13
+/** Web Audio — drone + scroll tick; context starts after a user gesture (browser policy). */
+const AUDIO_MASTER = 0.22
 const SCROLL_SOUND_MIN_MS = 42
 
 type AudioRig = {
@@ -47,9 +47,11 @@ function ensureAudioRig(): AudioRig {
   return audioRig
 }
 
-function unlockAudio() {
+/** Create graph if needed and resume; resolves when context is running or rejects if the browser blocks it. */
+export function ensureAudioRunning(): Promise<void> {
   const rig = ensureAudioRig()
-  void rig.ctx.resume()
+  if (rig.ctx.state === 'running') return Promise.resolve()
+  return rig.ctx.resume()
 }
 
 function updateDroneFromMotion(speed: number) {
@@ -57,7 +59,7 @@ function updateDroneFromMotion(speed: number) {
   const { ctx, humGain, humFilter } = audioRig
   const t = ctx.currentTime
   const v = Math.min(1, speed * 0.12)
-  const targetGain = 0.006 + v * 0.095
+  const targetGain = 0.022 + v * 0.12
   humGain.gain.cancelScheduledValues(t)
   humGain.gain.setValueAtTime(Math.max(0, humGain.gain.value), t)
   humGain.gain.linearRampToValueAtTime(targetGain, t + 0.055)
@@ -78,7 +80,7 @@ export function tickMotionAudio(smoothX: number, smoothY: number) {
   updateDroneFromMotion(speed)
 }
 
-export function playScrollTick(deltaY: number) {
+function playScrollTickNow(deltaY: number) {
   if (!audioRig || audioRig.ctx.state !== 'running') return
   const now = performance.now()
   if (now - lastScrollSoundMs < SCROLL_SOUND_MIN_MS) return
@@ -93,7 +95,7 @@ export function playScrollTick(deltaY: number) {
   osc.frequency.value = 280 + mag * 220
   const g = ctx.createGain()
   g.gain.setValueAtTime(0.0001, time)
-  g.gain.linearRampToValueAtTime(0.032 * mag, time + 0.01)
+  g.gain.linearRampToValueAtTime(0.045 * mag, time + 0.01)
   g.gain.exponentialRampToValueAtTime(0.0008, time + 0.072)
   osc.connect(g)
   g.connect(master)
@@ -101,7 +103,15 @@ export function playScrollTick(deltaY: number) {
   osc.stop(time + 0.085)
 }
 
+/** Safe to call from wheel/touch: resumes audio if needed, then plays (otherwise inaudible until gesture). */
+export function playScrollTick(deltaY: number) {
+  void ensureAudioRunning()
+    .then(() => playScrollTickNow(deltaY))
+    .catch(() => {})
+}
+
 export function initAudioGestureUnlock() {
-  window.addEventListener('pointerdown', unlockAudio)
-  window.addEventListener('keydown', unlockAudio)
+  const tryResume = () => void ensureAudioRunning().catch(() => {})
+  window.addEventListener('pointerdown', tryResume)
+  window.addEventListener('keydown', tryResume)
 }
